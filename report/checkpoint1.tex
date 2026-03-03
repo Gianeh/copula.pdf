@@ -160,7 +160,7 @@ Errore $L_1$ integrato $= 0.169$
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{../plots/01_naive_joint_pdf.png}
-\caption{Configurazione naive: ricostruzione della PDF congiunta. Nonostante l'errore sulla copula, la ricostruzione nello spazio originale è qualitativamente buona (errore medio $= 0.003$). L'errore massimo ($0.030$) si manifesta nelle code della distribuzione.}
+\caption{Configurazione naive: ricostruzione della PDF congiunta. Nonostante l'errore sulla copula, la ricostruzione nello spazio originale è qualitativamente buona (errore medio $= 0.003$). L'errore massimo ($0.030$) si concentra lungo la diagonale concordante, nelle regioni attorno a $(\pm 2, \pm 2)$ dove la struttura di dipendenza è più forte.}
 \label{fig:naive_joint}
 \end{figure}
 
@@ -263,7 +263,7 @@ Errore $L_1$ integrato $= 0.141$
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{../plots/02_best_joint_pdf.png}
-\caption{Best configuration: ricostruzione della PDF congiunta. L'errore medio è di appena $0.003$ e la ricostruzione è visivamente indistinguibile dall'originale. L'errore residuo ($\max = 0.036$) è concentrato nelle code, dove la densità è comunque molto bassa.}
+\caption{Best configuration: ricostruzione della PDF congiunta. L'errore medio è di appena $0.003$ e la ricostruzione è visivamente indistinguibile dall'originale. L'errore residuo ($\max = 0.036$) si concentra lungo la diagonale concordante, nella regione attorno a $(2, 2)$, coerentemente con la difficoltà della rete a catturare i picchi della copula.}
 \label{fig:best_joint}
 \end{figure}
 
