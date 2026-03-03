@@ -46,14 +46,31 @@ c(u,v) = \frac{1}{\sqrt{1-\rho^2}} \exp\!\left(-\frac{\rho^2(x^2+y^2) - 2\rho\, 
 \]
 con $x = \Phi^{-1}(u)$, $y = \Phi^{-1}(v)$. Questa è la nostra verità di riferimento.
 
-\subsection{Pseudo-osservazioni (Fase 3)}
+\subsection{Dataset e marginali (Fase 3)}
 
-Generiamo $N = 2000$ campioni $(x_i, y_i)$ dalla distribuzione congiunta.
+Generiamo $N = 2000$ campioni $(x_i, y_i)$ dalla distribuzione congiunta. La Figura~\ref{fig:dataset} mostra lo scatter plot dei campioni e le distribuzioni marginali empiriche, sovrapposte alla densità teorica $\mathcal{N}(0,1)$.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{../plots/00_dataset.png}
+\caption{Dataset generato: scatter plot della Gaussiana Bivariata (sinistra) e distribuzioni marginali empiriche vs.\ teoriche (centro, destra). La correlazione $\rho = 0.7$ è chiaramente visibile nell'allungamento della nuvola di punti lungo la diagonale.}
+\label{fig:dataset}
+\end{figure}
+
+\subsection{Pseudo-osservazioni}
+
 Poiché nella pratica le CDF marginali non sono note, le stimiamo con la trasformazione dei ranghi:
 \[
 u_i = \frac{\mathrm{rank}(x_i)}{N+1}, \qquad v_i = \frac{\mathrm{rank}(y_i)}{N+1}
 \]
-Il denominatore $N+1$ (anziché $N$) impedisce valori esattamente pari a 0 o 1, evitando problemi numerici con $\log(0)$ e $\Phi^{-1}(1) = \infty$.
+Il denominatore $N+1$ (anziché $N$) impedisce valori esattamente pari a 0 o 1, evitando problemi numerici con $\log(0)$ e $\Phi^{-1}(1) = \infty$. La Figura~\ref{fig:pseudo_obs} mostra la trasformazione dallo spazio originale al dominio $[0,1]^2$ della copula.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.85\textwidth]{../plots/00_pseudo_obs.png}
+\caption{Trasformazione dei ranghi: dallo spazio originale $(X, Y)$ (sinistra) alle pseudo-osservazioni $(u, v) \in [0,1]^2$ (destra). La struttura di dipendenza è preservata.}
+\label{fig:pseudo_obs}
+\end{figure}
 
 \subsection{Loss function (Fase 4)}
 
@@ -68,13 +85,19 @@ La loss è composta da due termini:
     \item \textbf{Penalty}: impone il vincolo $\iint c\,du\,dv = 1$, necessario perché $\hat{c}_\theta$ sia una densità valida. L'integrale è approssimato numericamente su una griglia $50 \times 50$ con la regola dei trapezi.
 \end{itemize}
 
-\subsection{Metrica di valutazione (Fase 5)}
+\subsection{Metriche di valutazione (Fase 5)}
 
-Misuriamo la qualità della stima con la divergenza di Kullback-Leibler:
+\textbf{Sulla copula:} divergenza di Kullback-Leibler tra densità vera e stimata:
 \[
 D_{\mathrm{KL}}(c \;\|\; \hat{c}) = \iint_{[0,1]^2} c(u,v) \log\frac{c(u,v)}{\hat{c}_\theta(u,v)}\,du\,dv
 \]
-approssimata numericamente su una griglia $200 \times 200$, normalizzando entrambe le densità sulla griglia prima del calcolo.
+approssimata su una griglia $200 \times 200$, normalizzando entrambe le densità prima del calcolo.
+
+\textbf{Sulla PDF congiunta ricostruita:} verifichiamo che la copula stimata produca una buona ricostruzione della distribuzione congiunta originale tramite il Teorema di Sklar:
+\[
+\hat{f}(x,y) = \hat{c}_\theta\bigl(\Phi(x),\, \Phi(y)\bigr) \cdot \varphi(x) \cdot \varphi(y)
+\]
+L'errore $L_1$ integrato misura la qualità complessiva della ricostruzione.
 
 % =========================================================================
 \section{Esperimento 1: Configurazione naive}
@@ -92,38 +115,51 @@ Parametri & 4\,417 \\
 $\lambda$ & 100 \\
 Learning rate & $10^{-3}$ (Adam) \\
 Epoche & 5\,000 \\
-$N$ campioni & 2\,000 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\subsection{Risultati}
+\subsection{Risultati sulla copula}
 
 \begin{center}
-$D_{\mathrm{KL}} = 0.0267$, \quad errore medio $= 0.147$, \quad $\displaystyle\iint \hat{c}\,du\,dv \approx 1.005$
+$D_{\mathrm{KL}} = 0.0264$, \quad errore medio $= 0.147$, \quad $\displaystyle\iint \hat{c}\,du\,dv \approx 1.005$
 \end{center}
 
 \begin{figure}[ht]
 \centering
 \includegraphics[width=\textwidth]{../plots/01_naive_confronto.png}
-\caption{Configurazione naive: confronto tra densità vera (sinistra), stimata (centro) e errore assoluto (destra). La forma qualitativa è catturata, ma la rete fatica a riprodurre i picchi negli angoli $(0,0)$ e $(1,1)$.}
+\caption{Configurazione naive: confronto contour 2D. La forma qualitativa è catturata, ma la rete fatica a riprodurre i picchi negli angoli $(0,0)$ e $(1,1)$.}
 \label{fig:naive_confronto}
 \end{figure}
 
 \begin{figure}[ht]
 \centering
+\includegraphics[width=0.85\textwidth]{../plots/01_naive_3d.png}
+\caption{Configurazione naive: superfici 3D. Si nota chiaramente come la rete smussa i picchi che la vera copula presenta agli angoli del dominio.}
+\label{fig:naive_3d}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
 \includegraphics[width=0.85\textwidth]{../plots/01_naive_learning.png}
-\caption{Curva di apprendimento --- configurazione naive. In alto: la NLL scende lentamente e mostra un plateau prolungato nelle prime 2000 epoche, indice di un $\lambda$ troppo forte che penalizza l'esplorazione. In basso: il penalty di normalizzazione crolla rapidamente a zero ($\lambda = 100$ forza $\iint \hat{c} \approx 1$ quasi subito), ma a scapito della capacità della rete di imparare la forma.}
+\caption{Curva di apprendimento --- configurazione naive. La NLL mostra un plateau prolungato (epoche 0--2000): $\lambda = 100$ è troppo forte e penalizza l'esplorazione della forma. Il penalty crolla subito a zero, ma a scapito della NLL.}
 \label{fig:naive_learning}
 \end{figure}
 
-\subsection{Osservazioni}
+\subsection{Ricostruzione della PDF congiunta}
 
-\begin{itemize}
-    \item La forma qualitativa della copula è catturata (densità alta lungo la diagonale concordante).
-    \item L'errore è concentrato agli angoli, dove la densità vera diverge: è un limite intrinseco di un MLP con attivazione \texttt{softplus}.
-    \item Il valore alto di $\lambda = 100$ forza una normalizzazione quasi perfetta ($\iint \hat{c} \approx 1.005$), ma rallenta drasticamente la discesa della NLL: la rete dedica troppo budget di ottimizzazione al vincolo e poco alla forma.
-\end{itemize}
+Ricostruiamo la PDF congiunta tramite Sklar: $\hat{f}(x,y) = \hat{c}_\theta(\Phi(x), \Phi(y)) \cdot \varphi(x) \cdot \varphi(y)$.
+
+\begin{center}
+Errore $L_1$ integrato $= 0.169$
+\end{center}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{../plots/01_naive_joint_pdf.png}
+\caption{Configurazione naive: ricostruzione della PDF congiunta. Nonostante l'errore sulla copula, la ricostruzione nello spazio originale è qualitativamente buona (errore medio $= 0.003$). L'errore massimo ($0.030$) si manifesta nelle code della distribuzione.}
+\label{fig:naive_joint}
+\end{figure}
 
 % =========================================================================
 \section{Grid Search}
@@ -164,7 +200,7 @@ Learning rate & $10^{-3}$, $5 \times 10^{-4}$ & Velocità di convergenza \\
 
 \subsection{Analisi}
 
-Il risultato più netto del grid search è che \textbf{$\lambda = 10$ domina sistematicamente $\lambda = 100$}. Tutte le top 5 configurazioni usano $\lambda = 10$. L'interpretazione è coerente con quanto osservato nell'esperimento naive: un $\lambda$ troppo alto satura il budget di ottimizzazione sul vincolo di normalizzazione, impedendo alla rete di modellare con precisione la forma della densità.
+Il risultato più netto è che \textbf{$\lambda = 10$ domina sistematicamente $\lambda = 100$}: tutte le top 5 configurazioni usano $\lambda = 10$. L'interpretazione è coerente con l'esperimento naive: un $\lambda$ troppo alto satura il budget di ottimizzazione sul vincolo di normalizzazione, impedendo alla rete di modellare con precisione la forma della densità.
 
 Il learning rate standard ($10^{-3}$) risulta sufficiente. La profondità (3 strati) e la larghezza (128 neuroni) aiutano, ma il guadagno rispetto a configurazioni più piccole è modesto.
 
@@ -184,54 +220,76 @@ Parametri & 33\,537 \\
 $\lambda$ & 10 \\
 Learning rate & $10^{-3}$ (Adam) \\
 Epoche & 5\,000 \\
-$N$ campioni & 2\,000 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\subsection{Risultati}
+\subsection{Risultati sulla copula}
 
 \begin{center}
-$D_{\mathrm{KL}} = 0.0142$, \quad errore medio $= 0.154$, \quad $\displaystyle\iint \hat{c}\,du\,dv \approx 1.047$
+$D_{\mathrm{KL}} = 0.0101$, \quad errore medio $= 0.154$, \quad $\displaystyle\iint \hat{c}\,du\,dv \approx 1.047$
 \end{center}
 
 \begin{figure}[ht]
 \centering
 \includegraphics[width=\textwidth]{../plots/02_best_confronto.png}
-\caption{Best configuration: il pattern di errore è più strutturato (concentrato lungo la diagonale concordante), ma il massimo errore è sceso da 10.32 a 4.32. La rete sta modellando meglio i picchi.}
+\caption{Best configuration: il pattern di errore è concentrato lungo la diagonale concordante, ma il massimo errore è sceso da 10.32 a 4.32 rispetto alla naive.}
 \label{fig:best_confronto}
 \end{figure}
 
 \begin{figure}[ht]
 \centering
+\includegraphics[width=0.85\textwidth]{../plots/02_best_3d.png}
+\caption{Best configuration: superfici 3D. I picchi agli angoli sono catturati molto meglio rispetto alla configurazione naive (cfr.\ Fig.~\ref{fig:naive_3d}).}
+\label{fig:best_3d}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
 \includegraphics[width=0.85\textwidth]{../plots/02_best_learning.png}
-\caption{Curva di apprendimento --- best configuration. La NLL converge molto più rapidamente (raggiunge $-0.35$ entro 500 epoche vs.\ 2500 per la naive) e scende più in basso ($-0.41$ vs.\ $-0.31$). Il penalty oscilla intorno a $0.02$, coerente con $\iint \hat{c} \approx 1.047$.}
+\caption{Curva di apprendimento --- best configuration. La NLL converge rapidamente (raggiunge $-0.35$ entro 500 epoche vs.\ 2500 per la naive) e scende più in basso ($-0.40$ vs.\ $-0.31$). Il penalty oscilla intorno a $0.02$, coerente con $\iint \hat{c} \approx 1.047$.}
 \label{fig:best_learning}
 \end{figure}
 
-\subsection{Confronto}
+\subsection{Ricostruzione della PDF congiunta}
 
 \begin{center}
-\begin{tabular}{lccc}
+Errore $L_1$ integrato $= 0.141$
+\end{center}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{../plots/02_best_joint_pdf.png}
+\caption{Best configuration: ricostruzione della PDF congiunta. L'errore medio è di appena $0.003$ e la ricostruzione è visivamente indistinguibile dall'originale. L'errore residuo ($\max = 0.036$) è concentrato nelle code, dove la densità è comunque molto bassa.}
+\label{fig:best_joint}
+\end{figure}
+
+% =========================================================================
+\section{Confronto riepilogativo}
+% =========================================================================
+
+\begin{center}
+\begin{tabular}{lcccc}
 \toprule
-& $D_{\mathrm{KL}}$ & Errore max & $\iint \hat{c}$ \\
+& $D_{\mathrm{KL}}$ (copula) & Errore max (copula) & $\iint \hat{c}$ & $L_1$ (congiunta) \\
 \midrule
-Naive ($64 \times 2$, $\lambda\!=\!100$)  & 0.0267 & 10.32 & 1.005 \\
-Best ($128 \times 3$, $\lambda\!=\!10$) & 0.0142 & 4.32  & 1.047 \\
+Naive ($64 \times 2$, $\lambda\!=\!100$)  & 0.0264 & 10.32 & 1.005 & 0.169 \\
+Best ($128 \times 3$, $\lambda\!=\!10$) & 0.0101 & 4.32  & 1.047 & 0.141 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-La configurazione best dimezza quasi la KL divergence e riduce il picco di errore da 10.32 a 4.32. Il compromesso è un integrale leggermente meno preciso (1.047 vs.\ 1.005), ma accettabile.
+La configurazione best migliora su tutte le metriche tranne l'integrale (1.047 vs.\ 1.005), che resta comunque accettabile. La ricostruzione della PDF congiunta è eccellente per entrambe: anche errori non trascurabili sulla copula (specialmente ai bordi di $[0,1]^2$) si attenuano nello spazio originale grazie alla moltiplicazione per le densità marginali, che sono molto piccole nelle code.
 
 % =========================================================================
 \section{Prossimi passi}
 % =========================================================================
 
 \begin{enumerate}
-    \item \textbf{Copula non banale:} testare su una copula con struttura di dipendenza diversa (es.\ Clayton, Gumbel) per verificare la generalizzazione dell'approccio.
-    \item \textbf{Dataset reale:} applicare la pipeline a dati reali bivariati (es.\ ritorni finanziari) dove la vera copula è ignota.
-    \item \textbf{Confronto con baseline:} KDE bivariata e Gaussian Mixture Models sugli stessi dati, confrontando tramite cross-validation likelihood.
+    \item \textbf{Miglioramento sul caso noto:} i picchi agli angoli della copula restano il punto debole. Possibili direzioni: architetture più espressive, scheduling del learning rate, aumento dei campioni.
+    \item \textbf{Copula non banale:} testare su una copula con struttura di dipendenza asimmetrica (es.\ Clayton, Gumbel).
+    \item \textbf{Dataset reale:} applicare la pipeline a dati reali bivariati dove la vera copula è ignota.
+    \item \textbf{Confronto con baseline:} KDE bivariata e Gaussian Mixture Models.
 \end{enumerate}
 
 \end{document}
