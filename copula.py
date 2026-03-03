@@ -68,10 +68,15 @@ def generate_data(rho, N, seed=42):
 # FASE 4: MODELLO (ANN) E TRAINING
 # =============================================================================
 #
-# Architettura: MLP semplice
+# Architettura: MLP
 #   Input:  (u, v) ∈ [0,1]²
-#   Hidden: 2 strati da 64 neuroni, attivazione tanh
-#   Output: softplus(z) > 0  (garantisce positività della densità stimata)
+#   Hidden: N strati da H neuroni, attivazione tanh
+#   Output: exp(z) o softplus(z) > 0  (garantisce positività)
+#
+# exp vs softplus:
+#   softplus(z) ≈ z per z >> 0, cresce linearmente → satura sui picchi
+#   exp(z) cresce esponenzialmente → può raggiungere valori arbitrari
+#   Per copule con picchi estremi (es. angoli della gaussiana), exp è meglio.
 #
 # Loss function:
 #   L(θ) = NLL + λ · penalty
@@ -79,21 +84,46 @@ def generate_data(rho, N, seed=42):
 #   NLL     = -(1/N) Σ log ĉ_θ(u_i, v_i)       (Maximum Likelihood)
 #   penalty = (∫∫ ĉ_θ(u,v) du dv  -  1)²        (vincolo normalizzazione)
 #
+# Con output exp, NLL si semplifica: NLL = -(1/N) Σ z_i  (dove z_i è il
+# logit pre-attivazione), evitando log(exp(z)) = z numericamente più stabile.
+#
 # L'integrale è approssimato numericamente su una griglia fissa con
 # la regola dei trapezi.
 # =============================================================================
 
 class CopulaDensityNet(nn.Module):
-    def __init__(self, hidden=64, layers=2):
+    def __init__(self, hidden=64, layers=2, output_act='exp', input_transform=False):
         super().__init__()
+        self.output_act = output_act
+        self.input_transform = input_transform
         net = [nn.Linear(2, hidden), nn.Tanh()]
         for _ in range(layers - 1):
             net += [nn.Linear(hidden, hidden), nn.Tanh()]
         net.append(nn.Linear(hidden, 1))
         self.net = nn.Sequential(*net)
 
+    def _transform(self, uv):
+        """Mappa (u,v) ∈ [0,1]² → (Φ⁻¹(u), Φ⁻¹(v)) ∈ ℝ².
+        In questo spazio la copula è una funzione liscia, senza divergenze."""
+        if not self.input_transform:
+            return uv
+        uv = torch.clamp(uv, 1e-4, 1 - 1e-4)
+        return torch.erfinv(2 * uv - 1) * 1.4142135623730951  # √2
+
     def forward(self, uv):
-        return F.softplus(self.net(uv)).squeeze(-1)
+        z = self.net(self._transform(uv)).squeeze(-1)
+        if self.output_act == 'exp':
+            return torch.exp(z)
+        else:
+            return F.softplus(z)
+
+    def forward_log(self, uv):
+        """Restituisce log ĉ(u,v) direttamente, numericamente stabile per NLL."""
+        z = self.net(self._transform(uv)).squeeze(-1)
+        if self.output_act == 'exp':
+            return z  # log(exp(z)) = z
+        else:
+            return torch.log(F.softplus(z) + 1e-8)
 
 
 def numerical_integral(model, device, grid_size=50):
@@ -107,36 +137,54 @@ def numerical_integral(model, device, grid_size=50):
 
 
 def train(model, U, V, device, epochs=3000, lr=1e-3, lam=10.0, grid_size=50,
-          print_every=500):
+          print_every=500, scheduler_type=None, grad_clip=None):
     """
     Addestra la rete minimizzando NLL + λ·(integrale-1)².
-    Restituisce lo storico delle loss.
+    Usa forward_log per stabilità numerica con output exp.
+
+    scheduler_type: None, 'cosine', o 'plateau'
     """
     uv = torch.tensor(np.column_stack((U, V)), dtype=torch.float32, device=device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    if scheduler_type == 'cosine':
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    elif scheduler_type == 'plateau':
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, patience=300, factor=0.5, min_lr=1e-6)
+    else:
+        scheduler = None
 
     history = {'total': [], 'nll': [], 'penalty': []}
 
     for epoch in range(1, epochs + 1):
         model.train()
-        c_pred = model(uv)
-        nll = -torch.log(c_pred + 1e-8).mean()
+        log_c = model.forward_log(uv)
+        nll = -log_c.mean()
         integ = numerical_integral(model, device, grid_size)
         pen = (integ - 1.0) ** 2
         loss = nll + lam * pen
 
         optimizer.zero_grad()
         loss.backward()
+        if grad_clip is not None:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
+
+        if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+            scheduler.step(loss)
+        elif scheduler is not None:
+            scheduler.step()
 
         history['total'].append(loss.item())
         history['nll'].append(nll.item())
         history['penalty'].append((lam * pen).item())
 
         if epoch % print_every == 0 or epoch == 1:
+            cur_lr = optimizer.param_groups[0]['lr']
             print(f"  Epoca {epoch:>5d}/{epochs}  |  loss={loss.item():.4f}  "
                   f"nll={nll.item():.4f}  ∫∫ĉ={integ.item():.4f}  "
-                  f"pen={pen.item():.6f}")
+                  f"pen={pen.item():.6f}  lr={cur_lr:.1e}")
 
     return history
 
