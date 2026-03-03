@@ -5,6 +5,7 @@
 \usepackage{geometry}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{float}
 \usepackage{hyperref}
 \geometry{a4paper, margin=2.5cm}
 
@@ -50,7 +51,7 @@ con $x = \Phi^{-1}(u)$, $y = \Phi^{-1}(v)$. Questa è la nostra verità di rifer
 
 Generiamo $N = 2000$ campioni $(x_i, y_i)$ dalla distribuzione congiunta. La Figura~\ref{fig:dataset} mostra lo scatter plot dei campioni e le distribuzioni marginali empiriche, sovrapposte alla densità teorica $\mathcal{N}(0,1)$.
 
-\begin{figure}[ht]
+\begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{../plots/00_dataset.png}
 \caption{Dataset generato: scatter plot della Gaussiana Bivariata (sinistra) e distribuzioni marginali empiriche vs.\ teoriche (centro, destra). La correlazione $\rho = 0.7$ è chiaramente visibile nell'allungamento della nuvola di punti lungo la diagonale.}
@@ -65,7 +66,7 @@ u_i = \frac{\mathrm{rank}(x_i)}{N+1}, \qquad v_i = \frac{\mathrm{rank}(y_i)}{N+1
 \]
 Il denominatore $N+1$ (anziché $N$) impedisce valori esattamente pari a 0 o 1, evitando problemi numerici con $\log(0)$ e $\Phi^{-1}(1) = \infty$. La Figura~\ref{fig:pseudo_obs} mostra la trasformazione dallo spazio originale al dominio $[0,1]^2$ della copula.
 
-\begin{figure}[ht]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.85\textwidth]{../plots/00_pseudo_obs.png}
 \caption{Trasformazione dei ranghi: dallo spazio originale $(X, Y)$ (sinistra) alle pseudo-osservazioni $(u, v) \in [0,1]^2$ (destra). La struttura di dipendenza è preservata.}
@@ -125,21 +126,23 @@ Epoche & 5\,000 \\
 $D_{\mathrm{KL}} = 0.0264$, \quad errore medio $= 0.147$, \quad $\displaystyle\iint \hat{c}\,du\,dv \approx 1.005$
 \end{center}
 
-\begin{figure}[ht]
+\begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{../plots/01_naive_confronto.png}
 \caption{Configurazione naive: confronto contour 2D. La forma qualitativa è catturata, ma la rete fatica a riprodurre i picchi negli angoli $(0,0)$ e $(1,1)$.}
 \label{fig:naive_confronto}
 \end{figure}
 
-\begin{figure}[ht]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.85\textwidth]{../plots/01_naive_3d.png}
 \caption{Configurazione naive: superfici 3D. Si nota chiaramente come la rete smussa i picchi che la vera copula presenta agli angoli del dominio.}
 \label{fig:naive_3d}
 \end{figure}
 
-\begin{figure}[ht]
+\subsection{Curva di apprendimento}
+
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.85\textwidth]{../plots/01_naive_learning.png}
 \caption{Curva di apprendimento --- configurazione naive. La NLL mostra un plateau prolungato (epoche 0--2000): $\lambda = 100$ è troppo forte e penalizza l'esplorazione della forma. Il penalty crolla subito a zero, ma a scapito della NLL.}
@@ -154,7 +157,7 @@ Ricostruiamo la PDF congiunta tramite Sklar: $\hat{f}(x,y) = \hat{c}_\theta(\Phi
 Errore $L_1$ integrato $= 0.169$
 \end{center}
 
-\begin{figure}[ht]
+\begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{../plots/01_naive_joint_pdf.png}
 \caption{Configurazione naive: ricostruzione della PDF congiunta. Nonostante l'errore sulla copula, la ricostruzione nello spazio originale è qualitativamente buona (errore medio $= 0.003$). L'errore massimo ($0.030$) si manifesta nelle code della distribuzione.}
@@ -230,21 +233,21 @@ Epoche & 5\,000 \\
 $D_{\mathrm{KL}} = 0.0101$, \quad errore medio $= 0.154$, \quad $\displaystyle\iint \hat{c}\,du\,dv \approx 1.047$
 \end{center}
 
-\begin{figure}[ht]
+\begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{../plots/02_best_confronto.png}
 \caption{Best configuration: il pattern di errore è concentrato lungo la diagonale concordante, ma il massimo errore è sceso da 10.32 a 4.32 rispetto alla naive.}
 \label{fig:best_confronto}
 \end{figure}
 
-\begin{figure}[ht]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.85\textwidth]{../plots/02_best_3d.png}
 \caption{Best configuration: superfici 3D. I picchi agli angoli sono catturati molto meglio rispetto alla configurazione naive (cfr.\ Fig.~\ref{fig:naive_3d}).}
 \label{fig:best_3d}
 \end{figure}
 
-\begin{figure}[ht]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.85\textwidth]{../plots/02_best_learning.png}
 \caption{Curva di apprendimento --- best configuration. La NLL converge rapidamente (raggiunge $-0.35$ entro 500 epoche vs.\ 2500 per la naive) e scende più in basso ($-0.40$ vs.\ $-0.31$). Il penalty oscilla intorno a $0.02$, coerente con $\iint \hat{c} \approx 1.047$.}
@@ -257,7 +260,7 @@ $D_{\mathrm{KL}} = 0.0101$, \quad errore medio $= 0.154$, \quad $\displaystyle\i
 Errore $L_1$ integrato $= 0.141$
 \end{center}
 
-\begin{figure}[ht]
+\begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{../plots/02_best_joint_pdf.png}
 \caption{Best configuration: ricostruzione della PDF congiunta. L'errore medio è di appena $0.003$ e la ricostruzione è visivamente indistinguibile dall'originale. L'errore residuo ($\max = 0.036$) è concentrato nelle code, dove la densità è comunque molto bassa.}
