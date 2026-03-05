@@ -92,7 +92,7 @@ def generate_data(rho, N, seed=42):
 # =============================================================================
 
 class CopulaDensityNet(nn.Module):
-    def __init__(self, hidden=64, layers=2, output_act='exp', input_transform=False):
+    def __init__(self, hidden=64, layers=2, output_act='softplus', input_transform=False):
         super().__init__()
         self.output_act = output_act
         self.input_transform = input_transform

@@ -19,19 +19,43 @@ from copula import (
     true_copula_density, true_copula_on_grid, generate_data,
     CopulaDensityNet, train, predict_on_grid, kl_divergence
 )
+from experiment_utils import (
+    init_run, save_current_figure, save_results, set_global_seed
+)
 
 RHO = 0.7
 N = 2000
 GRID_EVAL = 200
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Device: {device}\n")
+SEED = 42
+OUTPUT_ACT = 'softplus'
+INPUT_TRANSFORM = False
+WRITE_LEGACY_ARTIFACTS = os.getenv('WRITE_LEGACY_ARTIFACTS', '0') == '1'
 
-X, Y, U, V = generate_data(RHO, N)
+run_root, plots_dir, legacy_plots_dir, _ = init_run(
+    __file__,
+    seed=SEED,
+    config={
+        'rho': RHO,
+        'n': N,
+        'grid_eval': GRID_EVAL,
+        'output_act': OUTPUT_ACT,
+        'input_transform': INPUT_TRANSFORM,
+        'experiments': [
+            {'tag': '01_naive', 'hidden': 64, 'layers': 2, 'lam': 100, 'lr': 1e-3, 'epochs': 5000},
+            {'tag': '02_best', 'hidden': 128, 'layers': 3, 'lam': 10, 'lr': 1e-3, 'epochs': 5000},
+        ],
+    },
+    legacy_artifacts=WRITE_LEGACY_ARTIFACTS,
+)
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Device: {device}")
+print(f"Run directory: {run_root}\n")
+
+X, Y, U, V = generate_data(RHO, N, seed=SEED)
 U_grid, V_grid, c_true = true_copula_on_grid(RHO, GRID_EVAL)
 eps = 0.01
 du = (1 - 2 * eps) / (GRID_EVAL - 1)
-
-os.makedirs('plots', exist_ok=True)
 
 
 # =========================================================================
@@ -69,9 +93,9 @@ ax3.legend(fontsize=9)
 ax3.grid(True, alpha=0.2)
 
 plt.tight_layout()
-plt.savefig('plots/00_dataset.png', dpi=150)
+path = save_current_figure(plots_dir, '00_dataset.png', legacy_plots_dir)
 plt.close()
-print("  Salvato plots/00_dataset.png")
+print(f"  Salvato {path}")
 
 # Scatter delle pseudo-osservazioni
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
@@ -88,9 +112,9 @@ ax2.set_xlim(0, 1); ax2.set_ylim(0, 1)
 ax2.set_aspect('equal'); ax2.grid(True, alpha=0.2)
 
 plt.tight_layout()
-plt.savefig('plots/00_pseudo_obs.png', dpi=150)
+path = save_current_figure(plots_dir, '00_pseudo_obs.png', legacy_plots_dir)
 plt.close()
-print("  Salvato plots/00_pseudo_obs.png")
+print(f"  Salvato {path}")
 
 
 # =========================================================================
@@ -123,7 +147,7 @@ def plot_contour(c_true, c_pred, U_grid, V_grid, kl, tag):
     ax.set_xlabel('u'); ax.set_ylabel('v')
 
     plt.tight_layout()
-    plt.savefig(f'plots/{tag}_confronto.png', dpi=150)
+    save_current_figure(plots_dir, f'{tag}_confronto.png', legacy_plots_dir)
     plt.close()
 
 
@@ -156,7 +180,7 @@ def plot_3d(c_true, c_pred, U_grid, V_grid, tag):
     ax1.set_zlim(0, zmax); ax2.set_zlim(0, zmax)
 
     plt.tight_layout()
-    plt.savefig(f'plots/{tag}_3d.png', dpi=150)
+    save_current_figure(plots_dir, f'{tag}_3d.png', legacy_plots_dir)
     plt.close()
 
 
@@ -175,7 +199,7 @@ def plot_learning(history, lam, tag):
     ax2.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(f'plots/{tag}_learning.png', dpi=150)
+    save_current_figure(plots_dir, f'{tag}_learning.png', legacy_plots_dir)
     plt.close()
 
 
@@ -236,7 +260,7 @@ def plot_joint_reconstruction(model, X, Y, RHO, device, tag):
     ax.set_xlabel('x'); ax.set_ylabel('y')
 
     plt.tight_layout()
-    plt.savefig(f'plots/{tag}_joint_pdf.png', dpi=150)
+    save_current_figure(plots_dir, f'{tag}_joint_pdf.png', legacy_plots_dir)
     plt.close()
 
     # Calcola errore integrato
@@ -249,9 +273,15 @@ def plot_joint_reconstruction(model, X, Y, RHO, device, tag):
 # ESPERIMENTI
 # =========================================================================
 
-def run_experiment(hidden, layers, lam, lr, epochs, tag):
+def run_experiment(hidden, layers, lam, lr, epochs, tag, seed_offset):
     print(f"\n=== {tag} ===")
-    model = CopulaDensityNet(hidden=hidden, layers=layers).to(device)
+    set_global_seed(SEED + seed_offset)
+    model = CopulaDensityNet(
+        hidden=hidden,
+        layers=layers,
+        output_act=OUTPUT_ACT,
+        input_transform=INPUT_TRANSFORM,
+    ).to(device)
     history = train(model, U, V, device, epochs=epochs, lr=lr, lam=lam)
 
     _, _, c_pred = predict_on_grid(model, device, GRID_EVAL)
@@ -276,13 +306,22 @@ def run_experiment(hidden, layers, lam, lr, epochs, tag):
 
 # 01) Naive
 kl1, l1_1 = run_experiment(hidden=64, layers=2, lam=100, lr=1e-3, epochs=5000,
-                           tag='01_naive')
+                           tag='01_naive', seed_offset=1)
 
 # 02) Best da grid search
 kl2, l1_2 = run_experiment(hidden=128, layers=3, lam=10, lr=1e-3, epochs=5000,
-                           tag='02_best')
+                           tag='02_best', seed_offset=2)
 
 print("\n" + "=" * 50)
 print("Riepilogo:")
 print(f"  Naive:  KL={kl1:.4f}, L1 joint={l1_1:.6f}")
 print(f"  Best:   KL={kl2:.4f}, L1 joint={l1_2:.6f}")
+
+results_path = save_results(
+    run_root,
+    {
+        'naive': {'kl': float(kl1), 'l1_joint': float(l1_1)},
+        'best': {'kl': float(kl2), 'l1_joint': float(l1_2)},
+    },
+)
+print(f"Risultati salvati in {results_path}")

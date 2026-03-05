@@ -1,10 +1,11 @@
 \documentclass[11pt, a4paper]{article}
 \usepackage[utf8]{inputenc}
-\usepackage[italian]{babel}
+\IfFileExists{italian.ldf}{\usepackage[italian]{babel}}{\usepackage[english]{babel}}
 \usepackage{amsmath, amssymb}
 \usepackage{geometry}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{multirow}
 \usepackage{float}
 \usepackage{hyperref}
 \geometry{a4paper, margin=2.5cm}
@@ -46,6 +47,7 @@ Testiamo anche l'effetto di aumentare $N$ (da 2000 a 10000) e di usare un cosine
 \subsection{Setup}
 
 Rete fissa: $128 \times 3$ (best da grid search), $\lambda = 10$, 10000 epoche, griglia integrale $100 \times 100$.
+In tutte le metriche sulla copula, gli integrali numerici sono valutati su $[0.01,0.99]^2$ per stabilità ai bordi.
 
 \begin{center}
 \begin{tabular}{llccc}

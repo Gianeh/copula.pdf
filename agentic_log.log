@@ -1,0 +1,440 @@
+Agentic Log
+Date: 2026-03-03
+Workspace: /home/ppianigi/copula
+Scope: audit della prima parte di sperimentazione sulla copula gaussiana bivariata e definizione dei prossimi passi per renderla solida, chiara e riproducibile.
+
+1. Stato del progetto
+
+La prima parte di sperimentazione e' scientificamente sensata e le conclusioni principali reggono ai rerun:
+- la pipeline base funziona;
+- gli esperimenti v2/v3/v4 e l'ablation sono eseguibili;
+- il messaggio centrale resta valido: la trasformazione Phi^-1 degli input e' il miglioramento piu' efficace.
+
+Il problema principale non e' l'idea scientifica, ma la riproducibilita' tecnica del materiale attuale.
+
+2. Verifiche eseguite
+
+- lettura completa di roadmap, report checkpoint1/checkpoint2 e script Python principali;
+- controllo sintattico Python con py_compile: ok;
+- replay in copia temporanea di:
+  - checkpoint 1 mirato;
+  - experiment_v2.py;
+  - experiment_v3.py;
+  - experiment_v4.py;
+  - experiment_ablation.py;
+- test di compilazione LaTeX dei report.
+
+3. Critica strutturata
+
+3.1 Problema critico: drift tra codice corrente e checkpoint 1
+
+Il modello in copula.py ha default output_act='exp', ma gli script storici del checkpoint 1 istanziano CopulaDensityNet senza specificare output_act.
+
+Impatto:
+- run.py, grid_search.py e gen_all_plots.py non sono piu' autosufficienti rispetto al significato storico che la documentazione attribuisce loro;
+- checkpoint 1 e' descritto ovunque come softplus, ma oggi gli script possono eseguire exp senza dirlo.
+
+Evidenza:
+- con default attuale: la config best del checkpoint 1 ha prodotto nel replay KL=0.014788, err_max=9.128;
+- con softplus esplicito: KL=0.012843, err_max=4.174;
+- il report checkpoint 1 parla invece di MLP con softplus e di err_max circa 4.32.
+
+Giudizio:
+questo e' il punto da sistemare per primo, perche' altera il significato storico degli script.
+
+3.2 Riproducibilita' debole: manca il seed di PyTorch
+
+Il dataset e' fissato da NumPy, ma nei file di training non c'e' un manual_seed di torch ne' una gestione esplicita della randomizzazione CUDA.
+
+Impatto:
+- due run con stesso script e stessi dati possono produrre metriche non trascurabilmente diverse;
+- i numeri del report sono plausibili, ma non abbastanza stabili da essere "ricostruibili identici".
+
+Evidenza:
+- stessa config best softplus del checkpoint 1, due run consecutive:
+  - KL=0.012843
+  - KL=0.008216
+
+Giudizio:
+la narrativa sperimentale regge, ma il livello di ripetibilita' e' insufficiente per un handoff rigoroso.
+
+3.3 Artefatti condivisi e sovrascritti
+
+Piu' script scrivono sempre negli stessi path:
+- best_model.pt
+- plots/*.png
+
+Impatto:
+- non si sa quale run abbia prodotto il modello o il grafico attualmente presente;
+- i file tracciati in git mescolano stato "sorgente" e stato "artefatto finale";
+- un agente futuro non puo' risalire con certezza da un file al comando che lo ha generato.
+
+Giudizio:
+serve separare codice, report e artefatti di run.
+
+3.4 Report non completamente riproducibili come build
+
+La compilazione LaTeX non e' robusta su ambiente pulito:
+- questa macchina non ha la configurazione babel italiana necessaria;
+- checkpoint2.tex usa multirow ma il pacchetto non e' dichiarato nel preambolo;
+- .gitignore non esclude .aux/.log/.out e il tree si sporca subito.
+
+Impatto:
+- i PDF presenti possono esistere, ma la loro ricostruzione da zero non e' documentata in modo affidabile;
+- il progetto non e' "self-contained" dal punto di vista documentale.
+
+Giudizio:
+non e' un problema scientifico, ma e' un problema reale di consegna e manutenzione.
+
+3.5 Disallineamento tra testo e implementazione sul dominio numerico
+
+Il testo dei report descrive loss e KL su [0,1]^2, mentre il codice integra e valuta su [0.01, 0.99]^2.
+
+Impatto:
+- la scelta numerica e' ragionevole;
+- pero' non e' neutra, perche' il comportamento ai bordi e' proprio il punto delicato del progetto.
+
+Giudizio:
+non e' un bug, ma va esplicitato chiaramente nei documenti e negli script.
+
+3.6 run.py e' un entrypoint ambiguo
+
+run.py si presenta come "intera pipeline", ma in pratica lancia una sola configurazione con naming e messaggio ormai non del tutto allineati al codice attuale.
+
+Impatto:
+- chi arriva dopo puo' usarlo pensando di riprodurre il checkpoint 1 o il baseline corretto, senza farlo davvero.
+
+Giudizio:
+o diventa un vero entrypoint orchestrato, o va declassato a demo script.
+
+3.7 Mancano specifica ambiente e procedura standard di esecuzione
+
+Non c'e':
+- requirements.txt o equivalente;
+- README operativo;
+- matrice "script -> scopo -> output attesi";
+- procedura standard per rifare i checkpoint.
+
+Impatto:
+- il progetto e' comprensibile leggendo tutto, ma non e' ancora facile da eseguire in modo disciplinato.
+
+Giudizio:
+questo e' il secondo blocco di lavoro, subito dopo il fissaggio dei default e dei seed.
+
+4. Cose che funzionano davvero
+
+- La roadmap e' coerente con il percorso logico del progetto.
+- I report spiegano bene la motivazione scientifica.
+- v4 e ablation confermano il nucleo del risultato:
+  - experiment_v4.py replay: transform_sp_10k KL=0.003133;
+  - experiment_ablation.py replay: best+Phi^-1+10k KL=0.003257.
+- Il fallimento di exp in presenza di trasformazione resta osservabile nei rerun.
+
+5. Come procedere per rendere questa parte solida e riproducibile
+
+Propongo un hardening in 4 fasi, in questo ordine.
+
+Fase 1 - Congelare il significato storico degli esperimenti
+
+Obiettivo:
+rendere ogni script indipendente dai default globali.
+
+Azioni:
+- esplicitare in ogni script output_act, input_transform, seed e tutti i parametri che oggi sono impliciti;
+- riallineare run.py al suo ruolo reale;
+- definire in modo esplicito quali script rappresentano:
+  - checkpoint 1 baseline;
+  - grid search checkpoint 1;
+  - checkpoint 2 v2;
+  - checkpoint 2 v3;
+  - checkpoint 2 v4;
+  - checkpoint 2 ablation.
+
+Fase 2 - Riproducibilita' delle run
+
+Obiettivo:
+fare in modo che due esecuzioni controllate producano risultati comparabili e tracciabili.
+
+Azioni:
+- introdurre utility comune per seed NumPy/Torch/CUDA;
+- salvare metadata di run:
+  - timestamp;
+  - commit hash;
+  - script eseguito;
+  - config completa;
+  - device;
+  - metriche finali;
+- definire directory di output per run, per esempio outputs/<run_id>/.
+
+Fase 3 - Chiarezza documentale
+
+Obiettivo:
+fare in modo che un nuovo agente non debba ricostruire mentalmente il progetto leggendo tutti i file.
+
+Azioni:
+- aggiungere README operativo;
+- aggiungere mappa del progetto:
+  - file;
+  - scopo;
+  - input;
+  - output;
+  - checkpoint di riferimento;
+- esplicitare nei report il dominio numerico usato nelle integrazioni e nelle metriche;
+- documentare dipendenze Python e LaTeX.
+
+Fase 4 - Validazione finale di riproducibilita'
+
+Obiettivo:
+provare davvero che il progetto sia ricostruibile.
+
+Azioni:
+- eseguire una smoke run rapida;
+- eseguire una rerun completa dei checkpoint principali su workspace pulita;
+- confrontare i risultati con soglie dichiarate, non con uguaglianza bit-per-bit;
+- congelare un set finale di artefatti di riferimento.
+
+6. Prossimi passi che faremo insieme
+
+Ordine di lavoro proposto:
+
+1. Rendere espliciti i parametri storici negli script esistenti
+   Scopo: eliminare subito il drift del checkpoint 1 e dei baseline.
+
+2. Introdurre una utility comune di riproducibilita'
+   Scopo: seed unificato, metadata della run e naming coerente degli output.
+
+3. Separare artefatti e sorgenti
+   Scopo: evitare sovrascritture di best_model.pt e dei plot storici.
+
+4. Scrivere una documentazione operativa minima
+   Scopo: permettere a un altro agente di capire cosa lanciare e cosa aspettarsi.
+
+5. Fare un rerun controllato finale
+   Scopo: confermare che checkpoint 1 e checkpoint 2 siano riproducibili entro tolleranze esplicite.
+
+7. Criterio di successo
+
+Considereremo questa prima parte "solida e chiara e riproducibile" quando:
+- ogni script avra' config esplicita e non dipendente da default fragili;
+- ogni run produrra' output in una directory propria con metadata;
+- esistera' una procedura documentata per rifare i checkpoint;
+- i report saranno ricompilabili con dipendenze dichiarate;
+- un altro agente potra' rifare almeno i checkpoint chiave senza dover inferire dettagli nascosti.
+
+8. Nota per il prossimo agente
+
+Non cambiare prima il contenuto scientifico.
+Prima mettere in sicurezza:
+- significato degli script;
+- riproducibilita';
+- tracciabilita' degli artefatti;
+- documentazione operativa.
+
+Solo dopo ha senso rifinire ulteriormente risultati, report o nuova sperimentazione.
+
+9. Execution update (2026-03-05)
+
+Le azioni pianificate sopra sono state implementate in modo operativo.
+
+9.1 Parametri storici espliciti negli script
+
+Aggiornati script per evitare dipendenza da default impliciti:
+- run.py
+- grid_search.py
+- gen_all_plots.py
+- experiment_v2.py
+- experiment_v3.py
+- experiment_v4.py
+- experiment_ablation.py
+
+In particolare:
+- checkpoint 1 ora forza esplicitamente output_act='softplus' e input_transform=False;
+- i dataset usano seed esplicito nel generate_data;
+- i modelli sono inizializzati con seed controllato.
+
+9.2 Utility comune di riproducibilita'
+
+Aggiunto file:
+- experiment_utils.py
+
+Funzioni introdotte:
+- set_global_seed(...)
+- init_run(...)
+- save_current_figure(...)
+- save_model_state(...)
+- save_results(...)
+- save_json(...)
+
+Effetto pratico:
+- ogni run salva artefatti in outputs/<timestamp>_<script>/;
+- ogni run salva metadata.json (commit, seed, config, device);
+- ogni run salva results.json con metriche principali.
+
+9.3 Separazione artefatti e sorgenti
+
+Default nuovo:
+- artefatti in outputs/ (non sovrascrivono più i file storici).
+
+Compatibilità legacy:
+- con WRITE_LEGACY_ARTIFACTS=1 gli script continuano a scrivere anche su plots/ e best_model.pt in root.
+
+9.4 Documentazione operativa minima
+
+Aggiunto:
+- README.md
+
+Contenuti:
+- mappa script -> scopo;
+- dipendenze;
+- comandi standard;
+- convenzioni output;
+- note LaTeX.
+
+9.5 Ritocchi LaTeX
+
+Modificati:
+- report/checkpoint1.tex
+- report/checkpoint2.tex
+
+Fix applicati:
+- fallback babel: italiano se disponibile, altrimenti inglese;
+- aggiunto pacchetto multirow in checkpoint2;
+- chiarita nei report la valutazione numerica su [0.01,0.99]^2.
+
+9.6 Pulizia tracking artefatti
+
+Aggiornato .gitignore con:
+- outputs/
+- *.aux, *.log, *.out, *.toc
+
+9.7 Verifiche eseguite
+
+- py_compile su tutti gli script principali: OK.
+- Smoke run:
+  - python3 run.py
+  - eseguita con successo;
+  - output in outputs/20260305_130620_run/.
+- Build LaTeX:
+  - checkpoint1.tex: compilazione OK (con warning normali di riferimenti al primo pass).
+  - checkpoint2.tex: compilazione OK dopo reset dei file ausiliari (.aux/.out) incompatibili con build precedenti.
+
+10. Stato attuale per un nuovo agente
+
+Il repository ora e' molto più vicino a uno stato riproducibile.
+Per completare il consolidamento:
+- fare rerun controllato completo di v2/v3/v4/ablation con confronto soglie;
+- decidere se mantenere o rimuovere definitivamente la modalità legacy WRITE_LEGACY_ARTIFACTS;
+- opzionalmente aggiungere un orchestratore unico (es. script di benchmark) che lanci i checkpoint in sequenza e produca un report aggregato.
+
+11. Edit inventory completo (file per file)
+
+Data update: 2026-03-05
+
+11.1 File creati
+
+- experiment_utils.py
+  - nuovo modulo condiviso per:
+    - seed globale (NumPy/PyTorch/CUDA);
+    - creazione run directory in outputs/<run_id>/;
+    - salvataggio metadata.json/results.json;
+    - helper standard per figure e modelli.
+
+- README.md
+  - documentazione operativa:
+    - obiettivo di riproducibilita';
+    - struttura output;
+    - modalita' legacy;
+    - mappa script;
+    - comandi principali;
+    - note LaTeX.
+
+11.2 File modificati (codice)
+
+- copula.py
+  - default output_act del modello cambiato da 'exp' a 'softplus' per riallineamento checkpoint 1.
+
+- run.py
+  - configurazione storica resa esplicita (seed, output_act, input_transform);
+  - integrazione con experiment_utils;
+  - salvataggio artefatti in outputs/<run_id>/;
+  - salvataggio results.json e modello run_model.pt.
+
+- grid_search.py
+  - seed esplicito e controllato per ogni combinazione;
+  - output_act/input_transform espliciti;
+  - integrazione con experiment_utils;
+  - salvataggio best model e risultati in outputs/<run_id>/.
+
+- gen_all_plots.py
+  - seed esplicito e configurazione storica esplicita;
+  - integrazione con experiment_utils;
+  - salvataggio plot in outputs/<run_id>/plots;
+  - salvataggio risultati sintetici in results.json.
+
+- experiment_v2.py
+  - seed esplicito;
+  - integrazione con experiment_utils;
+  - output run tracciato in outputs/<run_id>/;
+  - risultati aggregati in results.json.
+
+- experiment_v3.py
+  - seed esplicito;
+  - integrazione con experiment_utils;
+  - output run tracciato in outputs/<run_id>/;
+  - salvataggio model e results.json.
+
+- experiment_v4.py
+  - seed esplicito;
+  - integrazione con experiment_utils;
+  - output run tracciato in outputs/<run_id>/;
+  - salvataggio model e results.json.
+
+- experiment_ablation.py
+  - refactor coerente con gli altri script:
+    - seed esplicito;
+    - integrazione con experiment_utils;
+    - output run tracciato in outputs/<run_id>/;
+    - salvataggio model e results.json.
+
+11.3 File modificati (config e report)
+
+- .gitignore
+  - aggiunti ignore per outputs/ e file ausiliari LaTeX (*.aux, *.log, *.out, *.toc);
+  - aggiunta eccezione !agentic_log.log per non perdere il log agente.
+
+- report/checkpoint1.tex
+  - fallback babel (italiano se disponibile, altrimenti inglese);
+  - nota esplicita sul dominio numerico [0.01,0.99]^2 per integrazione/KL.
+
+- report/checkpoint2.tex
+  - fallback babel (italiano se disponibile, altrimenti inglese);
+  - aggiunto usepackage multirow;
+  - nota esplicita sul dominio numerico [0.01,0.99]^2.
+
+- report/checkpoint1.pdf
+- report/checkpoint2.pdf
+  - rigenerati da compilazione dopo i fix dei sorgenti tex.
+
+11.4 Log aggiornato
+
+- agentic_log.log
+  - aggiunte sezioni 9-11:
+    - execution update;
+    - verifiche effettuate;
+    - inventario completo degli edit.
+
+12. Rerun controllato completato
+
+Run eseguite:
+- outputs/20260305_143328_experiment_v2
+- outputs/20260305_143601_experiment_v3
+- outputs/20260305_144049_experiment_v4
+- outputs/20260305_144309_experiment_ablation
+
+Riepilogo automatico creato:
+- outputs/20260305_144555_rerun_summary/summary.json
+- outputs/20260305_144555_rerun_summary/summary.md
+
+Scopo del doppio formato:
+- JSON: consumo automatico da script/agenti;
+- Markdown: lettura umana rapida con tabella metriche e link artefatti.

@@ -14,17 +14,34 @@ from copula import (
     true_copula_on_grid, generate_data,
     CopulaDensityNet, train, predict_on_grid, kl_divergence
 )
+from experiment_utils import (
+    init_run, save_current_figure, save_model_state, save_results, set_global_seed
+)
 
 RHO = 0.7
 GRID_EVAL = 200
+SEED = 42
+INPUT_TRANSFORM = False
+WRITE_LEGACY_ARTIFACTS = os.getenv('WRITE_LEGACY_ARTIFACTS', '0') == '1'
+
+run_root, plots_dir, legacy_plots_dir, _ = init_run(
+    __file__,
+    seed=SEED,
+    config={
+        'rho': RHO,
+        'grid_eval': GRID_EVAL,
+        'input_transform': INPUT_TRANSFORM,
+    },
+    legacy_artifacts=WRITE_LEGACY_ARTIFACTS,
+)
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Device: {device}\n")
+print(f"Device: {device}")
+print(f"Run directory: {run_root}\n")
 
 U_grid, V_grid, c_true = true_copula_on_grid(RHO, GRID_EVAL)
 eps = 0.01
 du = (1 - 2 * eps) / (GRID_EVAL - 1)
-
-os.makedirs('plots', exist_ok=True)
 
 configs = [
     # Baseline: il nostro best attuale per riferimento
@@ -62,9 +79,11 @@ for cfg in configs:
           f"clip={cfg['clip']}, sched={cfg['sched']}")
     print(f"{'='*60}")
 
-    X, Y, U, V = generate_data(RHO, cfg['N'])
+    X, Y, U, V = generate_data(RHO, cfg['N'], seed=SEED)
+    set_global_seed(SEED + len(results) + 1)
     model = CopulaDensityNet(hidden=cfg['hidden'], layers=cfg['layers'],
-                             output_act=cfg['act']).to(device)
+                             output_act=cfg['act'],
+                             input_transform=INPUT_TRANSFORM).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parametri: {n_params}")
 
@@ -120,7 +139,7 @@ ax.set_xlabel('u'); ax.set_ylabel('v')
 
 plt.suptitle(f"v3 Best: {best['name']} — KL = {best['kl']:.4f}", fontsize=13, fontweight='bold')
 plt.tight_layout()
-plt.savefig('plots/v3_best_confronto.png', dpi=150)
+save_current_figure(plots_dir, 'v3_best_confronto.png', legacy_plots_dir)
 plt.close()
 
 # --- Plot best: 3D ---
@@ -143,7 +162,7 @@ ax2.set_title('Stimata (ANN)'); ax2.view_init(elev=25, azim=-50)
 zmax = max(Ct.max(), Cp.max())
 ax1.set_zlim(0, zmax); ax2.set_zlim(0, zmax)
 plt.tight_layout()
-plt.savefig('plots/v3_best_3d.png', dpi=150)
+save_current_figure(plots_dir, 'v3_best_3d.png', legacy_plots_dir)
 plt.close()
 
 # --- Plot best: ricostruzione PDF congiunta ---
@@ -189,7 +208,7 @@ ax.set_title(f'|f - f̂|  (max={err_j.max():.4f}, media={err_j.mean():.4f})')
 ax.set_xlabel('x'); ax.set_ylabel('y')
 
 plt.tight_layout()
-plt.savefig('plots/v3_best_joint.png', dpi=150)
+save_current_figure(plots_dir, 'v3_best_joint.png', legacy_plots_dir)
 plt.close()
 
 dx_j = (x_range[-1] - x_range[0]) / (grid_size - 1)
@@ -209,10 +228,44 @@ for bar, kl_val in zip(bars, kls):
     ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.0003,
             f'{kl_val:.4f}', ha='center', fontsize=9)
 plt.tight_layout()
-plt.savefig('plots/v3_comparison.png', dpi=150)
+save_current_figure(plots_dir, 'v3_comparison.png', legacy_plots_dir)
 plt.close()
 
 # Salva best model
-torch.save(best['model'].state_dict(), 'best_model.pt')
-print(f"\nBest model salvato in best_model.pt")
-print("Plot salvati in plots/v3_*.png")
+best_model_path = save_model_state(
+    best['model'],
+    run_root,
+    legacy_artifacts=WRITE_LEGACY_ARTIFACTS,
+)
+results_path = save_results(
+    run_root,
+    {
+        'best': {
+            'name': best['name'],
+            'kl': float(best['kl']),
+            'integral': float(best['integ']),
+            'err_max': float(best['err_max']),
+            'err_mean': float(best['err_mean']),
+            'l1_joint': float(l1_joint),
+        },
+        'all_configs': [
+            {
+                'name': r['name'],
+                'act': r['act'],
+                'n': r['N'],
+                'hidden': r['hidden'],
+                'layers': r['layers'],
+                'clip': r['clip'],
+                'scheduler': r['sched'],
+                'kl': float(r['kl']),
+                'integral': float(r['integ']),
+                'err_max': float(r['err_max']),
+                'err_mean': float(r['err_mean']),
+            }
+            for r in results
+        ],
+    },
+)
+print(f"\nBest model salvato in {best_model_path}")
+print(f"Plot salvati in {plots_dir}")
+print(f"Risultati salvati in {results_path}")

@@ -19,38 +19,53 @@ from copula import (
     true_copula_on_grid, generate_data,
     CopulaDensityNet, train, predict_on_grid, kl_divergence
 )
+from experiment_utils import (
+    init_run, save_current_figure, save_model_state, save_results, set_global_seed
+)
 
 RHO = 0.7
 GRID_EVAL = 200
+SEED = 42
+WRITE_LEGACY_ARTIFACTS = os.getenv('WRITE_LEGACY_ARTIFACTS', '0') == '1'
+
+run_root, plots_dir, legacy_plots_dir, _ = init_run(
+    __file__,
+    seed=SEED,
+    config={
+        'rho': RHO,
+        'grid_eval': GRID_EVAL,
+    },
+    legacy_artifacts=WRITE_LEGACY_ARTIFACTS,
+)
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Device: {device}\n")
+print(f"Device: {device}")
+print(f"Run directory: {run_root}\n")
 
 U_grid, V_grid, c_true = true_copula_on_grid(RHO, GRID_EVAL)
 eps = 0.01
 du = (1 - 2 * eps) / (GRID_EVAL - 1)
-
-os.makedirs('plots', exist_ok=True)
 
 # --- Configurazioni ---
 configs = [
     # Gruppo 1: Naive (64×2, λ=100)
     {'name': 'naive',          'group': 'Naive', 'hidden': 64,  'layers': 2, 'lam': 100,
      'N': 2000,  'transform': False, 'epochs': 5000, 'lr': 1e-3},
-    {'name': 'naive+Φ⁻¹',     'group': 'Naive', 'hidden': 64,  'layers': 2, 'lam': 100,
+    {'name': 'naive+Φ⁻¹',      'group': 'Naive', 'hidden': 64,  'layers': 2, 'lam': 100,
      'N': 2000,  'transform': True,  'epochs': 5000, 'lr': 1e-3},
     {'name': 'naive+10k',      'group': 'Naive', 'hidden': 64,  'layers': 2, 'lam': 100,
      'N': 10000, 'transform': False, 'epochs': 5000, 'lr': 1e-3},
-    {'name': 'naive+Φ⁻¹+10k', 'group': 'Naive', 'hidden': 64,  'layers': 2, 'lam': 100,
+    {'name': 'naive+Φ⁻¹+10k',  'group': 'Naive', 'hidden': 64,  'layers': 2, 'lam': 100,
      'N': 10000, 'transform': True,  'epochs': 5000, 'lr': 1e-3},
 
     # Gruppo 2: Best (128×3, λ=10)
     {'name': 'best',           'group': 'Best',  'hidden': 128, 'layers': 3, 'lam': 10,
      'N': 2000,  'transform': False, 'epochs': 5000, 'lr': 1e-3},
-    {'name': 'best+Φ⁻¹',      'group': 'Best',  'hidden': 128, 'layers': 3, 'lam': 10,
+    {'name': 'best+Φ⁻¹',       'group': 'Best',  'hidden': 128, 'layers': 3, 'lam': 10,
      'N': 2000,  'transform': True,  'epochs': 5000, 'lr': 1e-3},
     {'name': 'best+10k',       'group': 'Best',  'hidden': 128, 'layers': 3, 'lam': 10,
      'N': 10000, 'transform': False, 'epochs': 5000, 'lr': 1e-3},
-    {'name': 'best+Φ⁻¹+10k',  'group': 'Best',  'hidden': 128, 'layers': 3, 'lam': 10,
+    {'name': 'best+Φ⁻¹+10k',   'group': 'Best',  'hidden': 128, 'layers': 3, 'lam': 10,
      'N': 10000, 'transform': True,  'epochs': 5000, 'lr': 1e-3},
 ]
 
@@ -64,16 +79,17 @@ for cfg in configs:
     print(f"  {cfg['hidden']}×{cfg['layers']}, λ={cfg['lam']}, N={cfg['N']}, Φ⁻¹={tr}")
     print(f"{'='*60}")
 
-    X, Y, U, V = generate_data(RHO, cfg['N'])
+    X, Y, U, V = generate_data(RHO, cfg['N'], seed=SEED)
+    set_global_seed(SEED + len(results) + 1)
     model = CopulaDensityNet(hidden=cfg['hidden'], layers=cfg['layers'],
                              output_act='softplus',
                              input_transform=cfg['transform']).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parametri: {n_params}")
 
-    history = train(model, U, V, device,
-                    epochs=cfg['epochs'], lr=cfg['lr'], lam=cfg['lam'],
-                    grid_size=50, print_every=2500)
+    train(model, U, V, device,
+          epochs=cfg['epochs'], lr=cfg['lr'], lam=cfg['lam'],
+          grid_size=50, print_every=2500)
 
     _, _, c_pred = predict_on_grid(model, device, GRID_EVAL)
     kl = kl_divergence(c_true, c_pred, du)
@@ -88,7 +104,7 @@ for cfg in configs:
     u_vals = stats.norm.cdf(Xg)
     v_vals = stats.norm.cdf(Yg)
     uv_t = torch.tensor(np.column_stack((u_vals.ravel(), v_vals.ravel())),
-                         dtype=torch.float32, device=device)
+                        dtype=torch.float32, device=device)
     with torch.no_grad():
         c_hat = model(uv_t).cpu().numpy().reshape(grid_j, grid_j)
     cov = [[1, RHO], [RHO, 1]]
@@ -132,7 +148,6 @@ for i, group in enumerate(groups):
     offset = (i - 0.5) * width
     bars = ax.bar(x + offset, kls, width, label=group, color=colors, edgecolor='black',
                   linewidth=0.5, alpha=0.85 if i == 0 else 1.0)
-    # Aggiungi hatching al gruppo naive per distinguerlo
     if i == 0:
         for bar in bars:
             bar.set_hatch('//')
@@ -147,7 +162,7 @@ ax.set_title('Ablation study: contributo di trasformazione Φ⁻¹ e N campioni'
 ax.legend(title='Config base', loc='upper right')
 ax.grid(True, alpha=0.3, axis='y')
 plt.tight_layout()
-plt.savefig('plots/ablation_comparison.png', dpi=150)
+save_current_figure(plots_dir, 'ablation_comparison.png', legacy_plots_dir)
 plt.close()
 
 # --- Contour per il best complessivo ---
@@ -178,7 +193,7 @@ ax.set_xlabel('u'); ax.set_ylabel('v')
 plt.suptitle(f"Ablation best: {best['name']} — KL = {best['kl']:.4f}",
              fontsize=13, fontweight='bold')
 plt.tight_layout()
-plt.savefig('plots/ablation_best_confronto.png', dpi=150)
+save_current_figure(plots_dir, 'ablation_best_confronto.png', legacy_plots_dir)
 plt.close()
 
 # --- 3D per il best ---
@@ -202,10 +217,48 @@ ax2.set_title('Stimata (ANN)'); ax2.view_init(elev=25, azim=-50)
 zmax = max(Ct.max(), Cp.max())
 ax1.set_zlim(0, zmax); ax2.set_zlim(0, zmax)
 plt.tight_layout()
-plt.savefig('plots/ablation_best_3d.png', dpi=150)
+save_current_figure(plots_dir, 'ablation_best_3d.png', legacy_plots_dir)
 plt.close()
 
-# Salva best model
-torch.save(best['model'].state_dict(), 'best_model.pt')
-print(f"\nBest model salvato in best_model.pt")
-print("Plot salvati in plots/ablation_*.png")
+best_model_path = save_model_state(
+    best['model'],
+    run_root,
+    legacy_artifacts=WRITE_LEGACY_ARTIFACTS,
+)
+results_path = save_results(
+    run_root,
+    {
+        'best': {
+            'name': best['name'],
+            'group': best['group'],
+            'kl': float(best['kl']),
+            'integral': float(best['integ']),
+            'err_max': float(best['err_max']),
+            'err_mean': float(best['err_mean']),
+            'l1_joint': float(best['l1_joint']),
+        },
+        'all_configs': [
+            {
+                'name': r['name'],
+                'group': r['group'],
+                'hidden': r['hidden'],
+                'layers': r['layers'],
+                'lam': r['lam'],
+                'n': r['N'],
+                'transform': bool(r['transform']),
+                'epochs': r['epochs'],
+                'lr': r['lr'],
+                'kl': float(r['kl']),
+                'integral': float(r['integ']),
+                'err_max': float(r['err_max']),
+                'err_mean': float(r['err_mean']),
+                'l1_joint': float(r['l1_joint']),
+            }
+            for r in results
+        ],
+    },
+)
+
+print(f"\nBest model salvato in {best_model_path}")
+print(f"Plot salvati in {plots_dir}")
+print(f"Risultati salvati in {results_path}")

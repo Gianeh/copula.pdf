@@ -1,6 +1,6 @@
 \documentclass[11pt, a4paper]{article}
 \usepackage[utf8]{inputenc}
-\usepackage[italian]{babel}
+\IfFileExists{italian.ldf}{\usepackage[italian]{babel}}{\usepackage[english]{babel}}
 \usepackage{amsmath, amssymb}
 \usepackage{geometry}
 \usepackage{graphicx}
@@ -80,6 +80,7 @@ La loss è composta da due termini:
 \[
 \mathcal{L}(\theta) = \underbrace{-\frac{1}{N}\sum_{i=1}^N \log \hat{c}_\theta(u_i, v_i)}_{\text{NLL}} \;+\; \lambda \underbrace{\left(\iint_{[0,1]^2} \hat{c}_\theta(u,v)\,du\,dv \;-\; 1\right)^{\!2}}_{\text{penalty normalizzazione}}
 \]
+In implementazione, l'integrale è approssimato numericamente sul dominio $[0.01,0.99]^2$ per stabilità ai bordi.
 
 \begin{itemize}
     \item \textbf{NLL}: massimizza la verosimiglianza delle pseudo-osservazioni. È il termine che guida la rete a imparare la \emph{forma} della copula.
@@ -92,7 +93,7 @@ La loss è composta da due termini:
 \[
 D_{\mathrm{KL}}(c \;\|\; \hat{c}) = \iint_{[0,1]^2} c(u,v) \log\frac{c(u,v)}{\hat{c}_\theta(u,v)}\,du\,dv
 \]
-approssimata su una griglia $200 \times 200$, normalizzando entrambe le densità prima del calcolo.
+approssimata su una griglia $200 \times 200$ nel dominio $[0.01,0.99]^2$, normalizzando entrambe le densità prima del calcolo.
 
 \textbf{Sulla PDF congiunta ricostruita:} verifichiamo che la copula stimata produca una buona ricostruzione della distribuzione congiunta originale tramite il Teorema di Sklar:
 \[

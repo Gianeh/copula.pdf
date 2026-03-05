@@ -18,6 +18,9 @@ from copula import (
     true_copula_on_grid, generate_data,
     CopulaDensityNet, train, predict_on_grid, kl_divergence
 )
+from experiment_utils import (
+    init_run, save_current_figure, save_results, set_global_seed
+)
 
 RHO = 0.7
 GRID_EVAL = 200
@@ -27,16 +30,35 @@ LAYERS = 3
 LAM = 10.0
 LR = 1e-3
 GRID_INT = 100  # griglia integrale più fitta
+SEED = 42
+INPUT_TRANSFORM = False
+WRITE_LEGACY_ARTIFACTS = os.getenv('WRITE_LEGACY_ARTIFACTS', '0') == '1'
+
+run_root, plots_dir, legacy_plots_dir, _ = init_run(
+    __file__,
+    seed=SEED,
+    config={
+        'rho': RHO,
+        'grid_eval': GRID_EVAL,
+        'epochs': EPOCHS,
+        'hidden': HIDDEN,
+        'layers': LAYERS,
+        'lam': LAM,
+        'lr': LR,
+        'grid_integral': GRID_INT,
+        'input_transform': INPUT_TRANSFORM,
+    },
+    legacy_artifacts=WRITE_LEGACY_ARTIFACTS,
+)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Device: {device}\n")
+print(f"Device: {device}")
+print(f"Run directory: {run_root}\n")
 
 # Ground truth
 U_grid, V_grid, c_true = true_copula_on_grid(RHO, GRID_EVAL)
 eps = 0.01
 du = (1 - 2 * eps) / (GRID_EVAL - 1)
-
-os.makedirs('plots', exist_ok=True)
 
 # Configurazioni da testare
 configs = [
@@ -55,10 +77,12 @@ for cfg in configs:
     print(f"  N={cfg['N']}, act={cfg['act']}, sched={cfg['sched']}")
     print(f"{'='*60}")
 
-    X, Y, U, V = generate_data(RHO, cfg['N'])
+    X, Y, U, V = generate_data(RHO, cfg['N'], seed=SEED)
+    set_global_seed(SEED + len(results) + 1)
 
     model = CopulaDensityNet(hidden=HIDDEN, layers=LAYERS,
-                             output_act=cfg['act']).to(device)
+                             output_act=cfg['act'],
+                             input_transform=INPUT_TRANSFORM).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Parametri: {n_params}")
 
@@ -114,7 +138,7 @@ ax.set_xlabel('u'); ax.set_ylabel('v')
 
 plt.suptitle(f"Best: {best['name']} — KL = {best['kl']:.4f}", fontsize=13, fontweight='bold')
 plt.tight_layout()
-plt.savefig('plots/v2_best_confronto.png', dpi=150)
+save_current_figure(plots_dir, 'v2_best_confronto.png', legacy_plots_dir)
 plt.close()
 
 # 3D del best
@@ -138,7 +162,7 @@ ax2.set_title('Stimata (ANN)'); ax2.view_init(elev=25, azim=-50)
 zmax = max(Ct.max(), Cp.max())
 ax1.set_zlim(0, zmax); ax2.set_zlim(0, zmax)
 plt.tight_layout()
-plt.savefig('plots/v2_best_3d.png', dpi=150)
+save_current_figure(plots_dir, 'v2_best_3d.png', legacy_plots_dir)
 plt.close()
 
 # Confronto KL tutte le configurazioni (bar chart)
@@ -154,7 +178,33 @@ for bar, kl in zip(bars, kls):
     ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.0005,
             f'{kl:.4f}', ha='center', fontsize=9)
 plt.tight_layout()
-plt.savefig('plots/v2_comparison.png', dpi=150)
+save_current_figure(plots_dir, 'v2_comparison.png', legacy_plots_dir)
 plt.close()
 
-print("\nPlot salvati in plots/v2_*.png")
+results_path = save_results(
+    run_root,
+    {
+        'best': {
+            'name': best['name'],
+            'kl': float(best['kl']),
+            'integral': float(best['integ']),
+            'err_max': float(best['err_max']),
+            'err_mean': float(best['err_mean']),
+        },
+        'all_configs': [
+            {
+                'name': r['name'],
+                'n': r['N'],
+                'act': r['act'],
+                'scheduler': r['sched'],
+                'kl': float(r['kl']),
+                'integral': float(r['integ']),
+                'err_max': float(r['err_max']),
+                'err_mean': float(r['err_mean']),
+            }
+            for r in results
+        ],
+    },
+)
+print(f"\nPlot salvati in {plots_dir}")
+print(f"Risultati salvati in {results_path}")

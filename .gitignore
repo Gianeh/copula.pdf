@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .claude/
 push.sh
+outputs/
+*.aux
+*.log
+*.out
+*.toc
+!agentic_log.log
